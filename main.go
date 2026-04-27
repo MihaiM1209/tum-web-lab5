@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"flag"
+	"html"
 	"fmt"
 	"io"
 	"net"
@@ -129,23 +130,37 @@ func fetchURL(rawURL string) error {
 func stripHTML(input string) string {
 	var builder strings.Builder
 	insideTag := false
+	skipContent := false
+	var tagBuffer strings.Builder
 
 	for _, r := range input {
-		switch r {
-		case '<':
+		switch {
+		case r == '<':
 			insideTag = true
-		case '>':
+			tagBuffer.Reset()
+		case r == '>':
 			insideTag = false
-		case '\n', '\r', '\t':
-			if !insideTag {
-				builder.WriteRune(' ')
+			tagText := strings.ToLower(strings.TrimSpace(tagBuffer.String()))
+			switch {
+			case strings.HasPrefix(tagText, "script"):
+				skipContent = true
+			case strings.HasPrefix(tagText, "/script"):
+				skipContent = false
+			case strings.HasPrefix(tagText, "style"):
+				skipContent = true
+			case strings.HasPrefix(tagText, "/style"):
+				skipContent = false
 			}
+		case insideTag:
+			tagBuffer.WriteRune(r)
+		case skipContent:
+			continue
+		case r == '\n' || r == '\r' || r == '\t':
+			builder.WriteRune(' ')
 		default:
-			if !insideTag {
-				builder.WriteRune(r)
-			}
+			builder.WriteRune(r)
 		}
 	}
 
-	return strings.Join(strings.Fields(builder.String()), " ")
+	return html.UnescapeString(strings.Join(strings.Fields(builder.String()), " "))
 }
