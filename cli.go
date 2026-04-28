@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func usage() {
@@ -18,6 +19,9 @@ func runCLI() {
 	searchTerm := flag.String("s", "", "make an HTTP request to search the term")
 	flag.Usage = usage
 	flag.Parse()
+	if *searchTerm != "" && len(flag.Args()) > 0 {
+		*searchTerm = strings.Join(append([]string{*searchTerm}, flag.Args()...), " ")
+	}
 
 	if *url == "" && *searchTerm == "" {
 		flag.Usage()
@@ -33,7 +37,10 @@ func runCLI() {
 	}
 
 	if *searchTerm != "" {
-		fmt.Fprintln(os.Stderr, "-s is not implemented yet")
+		if err := searchWeb(*searchTerm); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		os.Exit(1)
 	}
 }
