@@ -41,6 +41,6 @@ func runCLI() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		os.Exit(1)
+		return
 	}
 }

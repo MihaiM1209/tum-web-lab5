@@ -14,7 +14,10 @@ type searchResult struct {
 }
 
 func searchWeb(query string) error {
-	response, err := fetchResponse("https://html.duckduckgo.com/html/?q=" + url.QueryEscape(query))
+	response, err := fetchResponseWithAccept(
+		"https://html.duckduckgo.com/html/?q="+url.QueryEscape(query),
+		"text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+	)
 	if err != nil {
 		return err
 	}

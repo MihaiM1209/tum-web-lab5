@@ -13,6 +13,7 @@ import (
 )
 
 const maxRedirects = 5
+const defaultAcceptHeader = "application/json, text/html, text/plain;q=0.9, */*;q=0.8"
 
 func fetchURL(rawURL string) error {
 	response, err := fetchResponse(rawURL)
@@ -22,12 +23,7 @@ func fetchURL(rawURL string) error {
 
 	fmt.Println(response.statusLine)
 	fmt.Println()
-	if strings.Contains(strings.ToLower(response.headers["content-type"]), "text/html") {
-		fmt.Println(stripHTML(string(response.body)))
-		return nil
-	}
-
-	fmt.Print(string(response.body))
+	fmt.Print(formatBodyForDisplay(response.headers["content-type"], response.body))
 	return nil
 }
 
@@ -38,21 +34,30 @@ type httpResponse struct {
 }
 
 func fetchResponse(rawURL string) (*httpResponse, error) {
-	return fetchResponseWithRedirects(rawURL, maxRedirects)
+	return fetchResponseWithAccept(rawURL, defaultAcceptHeader)
 }
 
-func fetchResponseWithRedirects(rawURL string, redirectsLeft int) (*httpResponse, error) {
+func fetchResponseWithAccept(rawURL, acceptHeader string) (*httpResponse, error) {
+	return fetchResponseWithRedirects(rawURL, acceptHeader, maxRedirects)
+}
+
+func fetchResponseWithRedirects(rawURL, acceptHeader string, redirectsLeft int) (*httpResponse, error) {
 	if redirectsLeft < 0 {
 		return nil, fmt.Errorf("too many redirects")
 	}
 
-	response, parsedURL, err := fetchResponseOnce(rawURL)
+	if cachedResponse, found := loadCachedResponse(rawURL); found {
+		return cachedResponse, nil
+	}
+
+	response, parsedURL, err := fetchResponseOnce(rawURL, acceptHeader)
 	if err != nil {
 		return nil, err
 	}
 
 	statusCode := parseStatusCode(response.statusLine)
 	if !isRedirectStatus(statusCode) {
+		saveCachedResponse(rawURL, response)
 		return response, nil
 	}
 
@@ -66,10 +71,15 @@ func fetchResponseWithRedirects(rawURL string, redirectsLeft int) (*httpResponse
 		return nil, err
 	}
 
-	return fetchResponseWithRedirects(nextURL, redirectsLeft-1)
+	finalResponse, err := fetchResponseWithRedirects(nextURL, acceptHeader, redirectsLeft-1)
+	if err != nil {
+		return nil, err
+	}
+	saveCachedResponse(rawURL, finalResponse)
+	return finalResponse, nil
 }
 
-func fetchResponseOnce(rawURL string) (*httpResponse, *url.URL, error) {
+func fetchResponseOnce(rawURL, acceptHeader string) (*httpResponse, *url.URL, error) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid URL: %w", err)
@@ -111,7 +121,11 @@ func fetchResponseOnce(rawURL string) (*httpResponse, *url.URL, error) {
 	}
 	defer conn.Close()
 
-	request := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: go2web\r\nAccept: text/html, text/plain, */*\r\nConnection: close\r\n\r\n", path, parsedURL.Host)
+	if strings.TrimSpace(acceptHeader) == "" {
+		acceptHeader = defaultAcceptHeader
+	}
+
+	request := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: go2web\r\nAccept: %s\r\nConnection: close\r\n\r\n", path, parsedURL.Host, acceptHeader)
 	if _, err := io.WriteString(conn, request); err != nil {
 		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
